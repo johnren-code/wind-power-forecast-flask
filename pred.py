@@ -6,11 +6,8 @@ from sklearn.preprocessing import StandardScaler
 import pickle
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from pyecharts import options as opts
-from pyecharts.charts import Bar, Scatter
 from pyecharts.components import Table
-from pyecharts.render import make_snapshot
-from snapshot_phantomjs import snapshot
-
+from pyecharts.charts import Line, Bar, Grid,Scatter
 
 def feature_engineer(df):
     """特征工程：时间戳特征"""
@@ -151,7 +148,7 @@ def error_analysis(true_power,predicted_power):
     scatter = (
         Scatter()
         .add_xaxis(predicted_power.to_list())
-        .add_yaxis("残差", errors.tolist()[0], symbol_size=10)
+        .add_yaxis("残差", errors.tolist()[0], symbol_size=10,label_opts=opts.LabelOpts(is_show=False))
          .set_series_opts(
             itemstyle_opts=opts.ItemStyleOpts(
                 border_color='white', border_width=0.8, opacity=1
@@ -186,37 +183,71 @@ def error_analysis(true_power,predicted_power):
     return bar.dump_options_with_quotes(),scatter.dump_options_with_quotes(),table_data.to_json(double_precision=6), analysis_statement(acc,mse,mae,correlation_coefficient,r_squared)
 
 
-def pred(file, tid, start, input, output):
+def pred_static(file,tid,start,*,input=3,output=1,barfea="ROUND(A.WS,1)",width="1200px",height="700px",c1="rgb(100,149,237,0.25)",c2="rgb(240,248,255,0.25)"):
     data = pd.read_csv(file)
-    data['DATATIME'] = pd.to_datetime(data['DATATIME'])
-    # print(data['DATATIME'][0].month)
+    dtime = data["DATATIME"]
+    data["DATATIME"] = pd.to_datetime(data["DATATIME"])
     data = feature_engineer(data)
-    end = data.loc[data['DATATIME'] == start].index
-    begin = end - 24 * input * 4
-    use_cols = ['WINDSPEED', 'PREPOWER', 'WINDDIRECTION', 'TEMPERATURE', 'HUMIDITY',
-                'PRESSURE', 'ROUND(A.WS,1)', 'ROUND(A.POWER,0)', 'YD15',
-                'month', 'day', 'hour', 'minute',
-                'YD15_diff', 'apow', 'POWER_diff', 'RWS_diff', 'wp', 'neighboring_mean', 'neighboring_std', 'yd2',
-                'yd3', 'r12', 'r13', 'apow3', 'apow2', 'wp2', 'wp3']
-    future_use_cols = ['WINDSPEED', 'WINDDIRECTION', 'TEMPERATURE', 'HUMIDITY', 'PRESSURE', 'wp2', 'wp3', 'wp']
+    end = data.loc[data["DATATIME"] == start].index
+    begin = end - 24 * input * 4+1
+    use_cols = [
+        "WINDSPEED",
+        "PREPOWER",
+        "WINDDIRECTION",
+        "TEMPERATURE",
+        "HUMIDITY",
+        "PRESSURE",
+        "ROUND(A.WS,1)",
+        "ROUND(A.POWER,0)",
+        "YD15",
+        "month",
+        "day",
+        "hour",
+        "minute",
+        "YD15_diff",
+        "apow",
+        "POWER_diff",
+        "RWS_diff",
+        "wp",
+        "neighboring_mean",
+        "neighboring_std",
+        "yd2",
+        "yd3",
+        "r12",
+        "r13",
+        "apow3",
+        "apow2",
+        "wp2",
+        "wp3",
+    ]
+    future_use_cols = [
+        "WINDSPEED",
+        "WINDDIRECTION",
+        "TEMPERATURE",
+        "HUMIDITY",
+        "PRESSURE",
+        "wp2",
+        "wp3",
+        "wp",
+    ]
     fend = end + 24 * 4 * output
-    input1 = data[begin[0]:end[0]][use_cols].to_numpy()
-    input2 = data[end[0] + 1:fend[0] + 1][future_use_cols].to_numpy()
-    scaler1 = pickle.load(open('./wind/scaler/scaler{}_1.pkl'.format(tid), 'rb'))
+    input1 = data[begin[0] : end[0]+1][use_cols].to_numpy()
+    input2 = data[end[0] + 1 : fend[0] + 1][future_use_cols].to_numpy()
+    scaler1 = pickle.load(open("./wind/scaler/scaler{}_1.pkl".format(tid), "rb"))
     input1 = scaler1.transform(input1)
-    scaler2 = pickle.load(open('./wind/scaler/scaler{}_2.pkl'.format(tid), 'rb'))
+    scaler2 = pickle.load(open("./wind/scaler/scaler{}_2.pkl".format(tid), "rb"))
     input2 = scaler2.transform(input2)
-
-    input1 = paddle.to_tensor(input1).astype('float32')
-    input2 = paddle.to_tensor(input2).astype('float32')
+    input1 = paddle.to_tensor(input1).astype("float32")
+    input2 = paddle.to_tensor(input2).astype("float32")
     input1 = input1.reshape((1, 24 * input * 4, 28)).numpy()
     input2 = input2.reshape((1, 24 * 4 * output, 8)).numpy()
-    config = infer.Config(f"./wind/model/in{input}_out{output}/model_checkpoint_windid_{tid}.pdmodel",
-                          f"./wind/model/in{input}_out{output}/model_checkpoint_windid_{tid}.pdiparams")
+    config = infer.Config(
+        f"./wind/model/in{input}_out{output}/model_checkpoint_windid_{tid}.pdmodel",
+        f"./wind/model/in{input}_out{output}/model_checkpoint_windid_{tid}.pdiparams",
+    )
     config.disable_gpu()
     config.enable_mkldnn()
     config.disable_glog_info()
-
     predictor = infer.create_predictor(config)
     input_names = predictor.get_input_names()
     input_tensor = predictor.get_input_handle(input_names[0])
@@ -227,15 +258,303 @@ def pred(file, tid, start, input, output):
     output_names = predictor.get_output_names()
     output_tensor = predictor.get_output_handle(output_names[1])
     output_data = output_tensor.copy_to_cpu().tolist()[0]
-    time_stamp = data[end[0] + 1:fend[0] + 1]['DATATIME']
-    round_power = data[end[0] + 1:fend[0] + 1]['YD15'].to_list()
-    error_data = [(rp - pp) for rp, pp in zip(round_power,output_data)]
-    time_list = time_stamp.dt.strftime(('%Y-%m-%d %H:%M:%S')).to_list()
-    # pred_df = pd.Series(output_data[0], name='YD15')
-    # true_df = data[end[0] + 1:fend[0] + 1]['YD15']
-    # true_df = true_df.reset_index()['YD15']
-    # return ([time_list, output_data], error_analysis(true_df, pred_df))
-    pred_df=pd.Series(output_data,name='YD15')
-    true_df=data[end[0] + 1:fend[0] + 1]['YD15']
-    true_df=true_df.reset_index()['YD15']
-    return [time_list, round_power, output_data, error_data], error_analysis(true_df,pred_df)
+    pred_df = pd.Series(output_data, name="YD15")
+    true_df = data[end[0] + 1 : fend[0] + 1]["YD15"]
+    true_df = true_df.reset_index()["YD15"]
+    # l1.set_global_opts(
+    #     xaxis_opts=opts.AxisOpts(
+    #         is_scale=True,
+    #         type_="category",
+    #         grid_index=0,
+    #         axisline_opts=opts.AxisLineOpts(is_on_zero=False),
+    #         axistick_opts=opts.AxisTickOpts(is_show=False),
+    #         splitline_opts=opts.SplitLineOpts(is_show=False),
+    #     ),
+    #     yaxis_opts=opts.AxisOpts(
+    #         is_scale=True,
+    #     ),
+    #     title_opts=opts.TitleOpts(
+    #         title="功率-时间图",
+    #         pos_left="center",
+    #         title_textstyle_opts=opts.TextStyleOpts(
+    #             color="#00CCFF", font_size=25, font_weight="bold", border_radius=0.3
+    #         ),
+    #         pos_top="3%",
+    #     ),
+    #     legend_opts=opts.LegendOpts(
+    #         pos_left="2%",
+    #         border_width=0,
+    #         pos_top="5%",
+    #         # legend_icon="diamand",
+    #         border_color="#0DB4FF",
+    #         textstyle_opts=opts.TextStyleOpts(color="#ffffff"),
+    #     ),
+    #     tooltip_opts=opts.TooltipOpts(trigger="axis", axis_pointer_type="line"),
+    #     datazoom_opts=[
+    #         opts.DataZoomOpts(
+    #             is_show=False,
+    #             type_="inside",
+    #             xaxis_index=0,
+    #             range_start=begin[0]*100 / len(dtime) - 2 if begin[0]*100 / len(dtime) >2 else 0,
+    #             range_end=fend[0]*100 / len(dtime) + 2 if fend[0]*100 / len(dtime) + 2 < 100 else 100,
+    #         ),
+    #         opts.DataZoomOpts(
+    #             is_show=True,
+    #             xaxis_index=[0, 1],
+    #             pos_top="95%",
+    #             range_start=begin[0]*100 / len(dtime) - 2 if begin[0]*100 / len(dtime) > 2 else 0,
+    #             range_end=fend[0]*100 / len(dtime) + 2 if fend[0]*100 / len(dtime) + 2 < 100 else 100,
+    #         ),
+    #     ],
+    # )
+    # l1.set_series_opts(
+    #     markarea_opts=opts.MarkAreaOpts(
+    #         data=[
+    #             opts.MarkAreaItem(
+    #                 name="预测使用的历史数据",
+    #                 label_opts=opts.LabelOpts(color="#ffffff"),
+    #                 x=(dtime[begin[0]], dtime[end[0]]),
+    #                 itemstyle_opts=opts.ItemStyleOpts(color=c1),
+    #             ),
+    #             opts.MarkAreaItem(
+    #                 name="预测",
+    #                 label_opts=opts.LabelOpts(color="#ffffff"),
+    #                 x=(dtime[end[0] + 1], dtime[fend[0]]),
+    #                 itemstyle_opts=opts.ItemStyleOpts(color=c2),
+    #             ),
+    #         ]
+    #     )
+    # )
+    dtime_pred = [str(i) for i in dtime[end[0] + 1 : fend[0] + 1]]
+    range_start=int(begin[0])
+    range_end=int(fend[0])
+    return [dtime_pred,output_data,[dtime[begin[0]], dtime[end[0]],dtime[end[0] + 1], dtime[fend[0]]]
+            ,[range_start,range_end],true_df.to_list()],error_analysis(true_df,pred_df)
+
+def pred_prior(file,barfea="ROUND(A.WS,1)",width="1200px",height="700px"):
+    data = pd.read_csv(file)
+    end = int(len(data)*0.3)
+    dtime = data["DATATIME"][: end + 1]
+    data = data[: end + 1]
+    l1 = (
+        Line()
+        .add_xaxis([str(i) for i in dtime])
+        .add_yaxis(
+            "真实功率",
+            [float(i) for i in data["YD15"].round(2)],
+            is_clip=False,
+            is_symbol_show=False,
+            linestyle_opts=opts.LineStyleOpts(color="#0DB4FF", width=2),
+            itemstyle_opts=opts.ItemStyleOpts(color="#0DB4FF"),
+            label_opts=opts.LabelOpts(color="#0DB4FF"),
+        )
+        .set_global_opts(
+            xaxis_opts=opts.AxisOpts(
+                is_scale=True,
+                type_="category",
+                grid_index=0,
+                axisline_opts=opts.AxisLineOpts(is_on_zero=False),
+                axistick_opts=opts.AxisTickOpts(is_show=False),
+                splitline_opts=opts.SplitLineOpts(is_show=False),
+            ),
+            yaxis_opts=opts.AxisOpts(
+                is_scale=True,
+            ),
+            title_opts=opts.TitleOpts(
+                title="功率-时间图",
+                pos_left="center",
+                title_textstyle_opts=opts.TextStyleOpts(
+                    color="#00CCFF", font_size=25, font_weight="bold", border_radius=0.3
+                ),
+                pos_top="3%",
+            ),
+            legend_opts=opts.LegendOpts(
+                pos_left="2%",
+                border_width=0,
+                pos_top="5%",
+                #legend_icon="diamand",
+                border_color="#0DB4FF",
+                textstyle_opts=opts.TextStyleOpts(color="#ffffff"),
+            ),
+            tooltip_opts=opts.TooltipOpts(trigger="axis", axis_pointer_type="line"),
+            # axispointer_opts=opts.AxisPointerOpts(link=[{"xAxisIndex":'all'}]),
+            datazoom_opts=[
+                opts.DataZoomOpts(
+                    is_show=False,
+                    type_="inside",
+                    xaxis_index=0,
+                    range_start=90,
+                    range_end=100,
+                ),
+                opts.DataZoomOpts(
+                    is_show=True,
+                    xaxis_index=[0, 1],
+                    pos_top="95%",
+                    range_start=90,
+                    range_end=100,
+                ),
+            ],
+            toolbox_opts=opts.ToolboxOpts(feature=opts.ToolBoxFeatureOpts(data_view=None,magic_type=None,brush=None)),
+        )
+    )
+    b = (
+        Bar()
+        .add_xaxis([str(i) for i in dtime])
+        .add_yaxis(
+            barfea,
+            [float(i) for i in data[barfea].round(2)],
+            label_opts=opts.LabelOpts(is_show=False),
+        )
+        .set_global_opts(
+            xaxis_opts=opts.AxisOpts(
+                is_scale=True,
+                type_="category",
+                grid_index=0,
+                axislabel_opts=opts.LabelOpts(is_show=False),
+                axistick_opts=opts.AxisTickOpts(is_show=False),
+                splitline_opts=opts.SplitLineOpts(is_show=False),
+            ),
+            yaxis_opts=opts.AxisOpts(
+                is_scale=True,
+                axisline_opts=opts.AxisLineOpts(is_on_zero=False),
+                axistick_opts=opts.AxisTickOpts(is_show=False),
+                splitline_opts=opts.SplitLineOpts(is_show=False),
+            ),
+            legend_opts=opts.LegendOpts(
+                is_show=True,
+                border_width=0,
+                pos_top="91%",
+                pos_left="42%",
+                textstyle_opts=opts.TextStyleOpts(color="white"),
+            ),
+            tooltip_opts=opts.TooltipOpts(trigger="axis", axis_pointer_type="line"),
+            # axispointer_opts=opts.AxisPointerOpts(link=[{"xAxisIndex":'all'}]),
+            visualmap_opts=opts.VisualMapOpts(
+                is_show=False,
+                max_=float(data[barfea].max().max()),
+                min_=float(data[barfea].min().min()),
+                range_color=("blue", "red"),
+                series_index=2,
+            ),
+        )
+    )
+    l2 = (
+        Line()
+        .add_xaxis([])
+        .add_yaxis(
+            "预测功率",
+            [],
+            is_clip=False,
+            is_symbol_show=False,
+            linestyle_opts=opts.LineStyleOpts(color="#A9FF1E", width=2),
+            itemstyle_opts=opts.ItemStyleOpts(color="#A9FF1E"),
+        )
+        .set_global_opts(legend_opts=opts.LegendOpts(pos_left="left"))
+    )
+    l1.set_series_opts(
+        markarea_opts=opts.MarkAreaOpts(
+            data=[
+                opts.MarkAreaItem(
+                    name=" ",
+                    label_opts=opts.LabelOpts(color="#ffffff"),
+                    #x=('2021-11-01 05:00:00', '2021-11-10 05:00:00'),
+                    itemstyle_opts=opts.ItemStyleOpts(color='rgb(255,255,255,0.0)'),
+                ),
+                opts.MarkAreaItem(
+                    name=" ",
+                    label_opts=opts.LabelOpts(color="#ffffff"),
+                    #x=('2021-11-11 05:00:00', '2021-11-21 05:00:00'),
+                    itemstyle_opts=opts.ItemStyleOpts(color='rgb(255,255,255,0.0)'),
+                ),
+            ]
+        )
+    )
+    l1 = l1.overlap(l2)
+    g = Grid(init_opts=opts.InitOpts(height=height, width=width))
+    g.add(l1, grid_opts=opts.GridOpts(pos_top="17%", pos_bottom="25%", is_show=False))
+    g.add(b, grid_opts=opts.GridOpts(pos_top="80%", is_show=False))
+
+    return [g.dump_options_with_quotes(), end]
+
+def pred_dynamic(file, tid, *, input=3, output=1, barfea="ROUND(A.WS,1)", end=-1):
+    data = pd.read_csv(file)
+    dtime = data["DATATIME"]
+    data["DATATIME"] = pd.to_datetime(data["DATATIME"])
+    data = feature_engineer(data)
+    begin = end - 24 * input * 4+1
+    use_cols = [
+        "WINDSPEED",
+        "PREPOWER",
+        "WINDDIRECTION",
+        "TEMPERATURE",
+        "HUMIDITY",
+        "PRESSURE",
+        "ROUND(A.WS,1)",
+        "ROUND(A.POWER,0)",
+        "YD15",
+        "month",
+        "day",
+        "hour",
+        "minute",
+        "YD15_diff",
+        "apow",
+        "POWER_diff",
+        "RWS_diff",
+        "wp",
+        "neighboring_mean",
+        "neighboring_std",
+        "yd2",
+        "yd3",
+        "r12",
+        "r13",
+        "apow3",
+        "apow2",
+        "wp2",
+        "wp3",
+    ]
+    future_use_cols = [
+        "WINDSPEED",
+        "WINDDIRECTION",
+        "TEMPERATURE",
+        "HUMIDITY",
+        "PRESSURE",
+        "wp2",
+        "wp3",
+        "wp",
+    ]
+    fend = end + 24 * 4 * output
+    input1 = data[begin:end+1][use_cols].to_numpy()
+    input2 = data[end + 1 : fend + 1][future_use_cols].to_numpy()
+    scaler1 = pickle.load(open("./wind/scaler/scaler{}_1.pkl".format(tid), "rb"))
+    input1 = scaler1.transform(input1)
+    scaler2 = pickle.load(open("./wind/scaler/scaler{}_2.pkl".format(tid), "rb"))
+    input2 = scaler2.transform(input2)
+    input1 = paddle.to_tensor(input1).astype("float32")
+    input2 = paddle.to_tensor(input2).astype("float32")
+    input1 = input1.reshape((1, 24 * input * 4, 28)).numpy()
+    input2 = input2.reshape((1, 24 * 4 * output, 8)).numpy()
+    config = infer.Config(
+        f"./wind/model/in{input}_out{output}/model_checkpoint_windid_{tid}.pdmodel",
+        f"./wind/model/in{input}_out{output}/model_checkpoint_windid_{tid}.pdiparams",
+    )
+    config.disable_gpu()
+    config.enable_mkldnn()
+    config.disable_glog_info()
+    predictor = infer.create_predictor(config)
+    input_names = predictor.get_input_names()
+    input_tensor = predictor.get_input_handle(input_names[0])
+    input_tensor.copy_from_cpu(input1)
+    input_tensor = predictor.get_input_handle(input_names[1])
+    input_tensor.copy_from_cpu(input2)
+    predictor.run()
+    output_names = predictor.get_output_names()
+    output_tensor = predictor.get_output_handle(output_names[1])
+    output_data = output_tensor.copy_to_cpu().tolist()[0]
+    pred_df = pd.Series(output_data, name="YD15")
+    true_df = data[end + 1 : fend + 1]["YD15"]
+    true_df = true_df.reset_index()["YD15"]
+    dtime_ = [str(i) for i in dtime[end + 1 : fend + 1]]
+    bardata = [float(i) for i in data[barfea][end + 1 : fend + 1].round(2)]
+    dpred = [float(i) for i in pred_df.round(2)]
+    dtrue = [float(i) for i in true_df.round(2)]
+    return [dtime_, dtrue, dpred, bardata],error_analysis(true_df,pred_df)

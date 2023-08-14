@@ -56,6 +56,7 @@ warnings.filterwarnings("ignore")
 def cal_miss_info(file_path):
     """缺失值统计"""
     data = pd.read_csv(file_path)
+    print('读取到了')
     miss_count = data.isnull().sum().sort_values(ascending=False)
     miss_pert = miss_count / len(data)
     miss_info = pd.concat([miss_count, miss_pert], axis=1, keys=["缺失计数", "缺失百分比"])
