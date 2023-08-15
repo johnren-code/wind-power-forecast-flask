@@ -64,6 +64,48 @@ def get_weather_future():
     return res.to_json()
 
 
+import json
+import pandas as pd
+from datetime import datetime
+
+def get_weather_data(file_path):
+    df = pd.read_csv(file_path)
+    times = df.iloc[-119*6::6]['DATATIME'].tolist()
+    windspeed = df.iloc[-119*6::6]['ROUND(A.WS,1)'].tolist()
+    winddirection = df.iloc[-119*6::6]['WINDDIRECTION'].tolist()
+    humidity = df.iloc[-119*6::6]['HUMIDITY'].tolist()
+    dt_objects = [datetime.strptime(time, "%Y-%m-%d %H:%M:%S") for time in times]
+    iso_datetimes = [dt_object.strftime("%Y-%m-%dT%H:%M:%S.000Z") for dt_object in dt_objects]
+    dates = [time.split(' ')[0] for time in times]
+    dates = sorted(list(set(dates)))
+
+    # 读取json文件内容,返回字典格式
+    with open('./weather_data.json','r')as fp:
+        dic = json.load(fp)
+
+        data_list = dic['data']
+        data_ret_list = []
+        for i, data in enumerate(data_list):
+            data['time'] = iso_datetimes[i]
+            data['windSpeed'] = windspeed[i]
+            data['R'] = winddirection[i]
+            data['waveHeight'] = humidity[i]
+            data_ret_list.append(data)
+        dic['data'] = data_ret_list
+        
+        forecast_list = dic['forecast']
+        fore_ret_list = []
+        dic['forecast'] = []
+        for i, fore in enumerate(forecast_list):
+            if i >= len(dates):
+                break;
+            fore['localDate'] = dates[i]
+            fore_ret_list.append(fore)
+        dic['forecast'] = fore_ret_list
+
+        json_data = json.dumps(dic)
+        
+    return json_data
 
 
 def generate_data_list(new_min, new_max):

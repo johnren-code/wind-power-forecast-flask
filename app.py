@@ -36,6 +36,13 @@ class WindFarmUrl(db.Model):
     process_file_url = db.Column(db.String, nullable=False)
 
 
+@app.route("/weather_pred", methods=["POST"])
+def get_whether_pred():
+    info = request.get_json()
+    path = info.get('path')
+    return json.loads(weather.get_weather_data(path))
+
+
 @app.route("/weather", methods=["GET"])
 def get_whether():
     # weather_now=weather.get_weather_now()
@@ -90,13 +97,14 @@ def get_pred_static():
     start = info.get('start')
     input =int( info.get('input'))
     output = int(info.get('output'))
-    Lists, Tuples = pred_static(file, tid,start, input=input, output=output)
+    Lists, Tuples = pred_static(file, tid, start=start, input=input, output=output)
     bar, scatter, table_json, statement = Tuples
-    dtime_pred,pred_data,make_areas,ranges,true_data=Lists
-    return jsonify({'dtime_pred':dtime_pred,'pred_data':pred_data,'make_areas':make_areas,'ranges':ranges
+    dtime_pred,pred_data,grid_data,true_data=Lists
+    return jsonify({'dtime_pred':dtime_pred,'pred_data':pred_data,'grid_data':json.loads(grid_data)
                     ,'bar':json.loads(bar), 'scatter':json.loads(scatter), 'table_json':json.loads(table_json),
                     'statement':statement,'true_data':true_data})
     # return jsonify(result.tolist())  # 转换为 list 并 jsonify
+
 
 @app.route("/pred_dynamic", methods=['POST'])
 def get_pred_dynamic():
