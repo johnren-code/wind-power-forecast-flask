@@ -56,17 +56,16 @@ warnings.filterwarnings("ignore")
 def cal_miss_info(file_path):
     """缺失值统计"""
     data = pd.read_csv(file_path)
-    print('读取到了')
     miss_count = data.isnull().sum().sort_values(ascending=False)
     miss_pert = miss_count / len(data)
     miss_info = pd.concat([miss_count, miss_pert], axis=1, keys=["缺失计数", "缺失百分比"])
     return miss_info
 
 
-def miss_info_bar(file_path,*,canvas_weight='1750px',canvas_height='500px'):
+def miss_info_bar(file_path,*,canvas_weight='750px',canvas_height='500px'):
     miss_info = cal_miss_info(file_path).round(3)
     bar = (
-        Bar(init_opts=opts.InitOpts(width=canvas_weight,height=canvas_height, theme=ThemeType.DARK))
+        Bar(init_opts=opts.InitOpts(width=canvas_weight,height=canvas_height, theme=ThemeType.LIGHT))
         .add_xaxis([i for i in miss_info.index])
         .add_yaxis(
             "缺失百分比",
@@ -211,56 +210,56 @@ def plot_box(file_path,theme='dark') -> Boxplot:
         Boxplot(init_opts=opts.InitOpts(theme=ThemeType.DARK))
         .add_xaxis(["PREPOWER"])
         .add_yaxis("", Boxplot().prepare_data([data2]), box_width="40%")
-        .set_global_opts(title_opts=opts.TitleOpts(title="盒须图"))
+        # .set_global_opts(title_opts=opts.TitleOpts(title="盒须图"))
     )
 
     boxplot3 = (
         Boxplot(init_opts=opts.InitOpts(theme=ThemeType.DARK))
         .add_xaxis(["WINDDIRECTION"])
         .add_yaxis("", Boxplot().prepare_data([data3]), box_width="40%")
-        .set_global_opts(title_opts=opts.TitleOpts(title="盒须图"))
+        # .set_global_opts(title_opts=opts.TitleOpts(title="盒须图"))
     )
 
     boxplot4 = (
         Boxplot(init_opts=opts.InitOpts(theme=ThemeType.DARK))
         .add_xaxis(["TEMPERATURE"])
         .add_yaxis("", Boxplot().prepare_data([data4]), box_width="40%")
-        .set_global_opts(title_opts=opts.TitleOpts(title="盒须图"))
+        # .set_global_opts(title_opts=opts.TitleOpts(title="盒须图"))
     )
 
     boxplot5 = (
         Boxplot(init_opts=opts.InitOpts(theme=ThemeType.DARK))
         .add_xaxis(["HUMIDITY"])
         .add_yaxis("", Boxplot().prepare_data([data5]), box_width="40%")
-        .set_global_opts(title_opts=opts.TitleOpts(title="盒须图"))
+        # .set_global_opts(title_opts=opts.TitleOpts(title="盒须图"))
     )
 
     boxplot6 = (
         Boxplot(init_opts=opts.InitOpts(theme=ThemeType.DARK))
         .add_xaxis(["PRESSURE"])
         .add_yaxis("", Boxplot().prepare_data([data6]), box_width="40%")
-        .set_global_opts(title_opts=opts.TitleOpts(title="盒须图"))
+        # .set_global_opts(title_opts=opts.TitleOpts(title="盒须图"))
     )
 
     boxplot7 = (
         Boxplot(init_opts=opts.InitOpts(theme=ThemeType.DARK))
         .add_xaxis(["ROUND(A.WS,1)"])
         .add_yaxis("", Boxplot().prepare_data([data7]), box_width="40%")
-        .set_global_opts(title_opts=opts.TitleOpts(title="盒须图"))
+        # .set_global_opts(title_opts=opts.TitleOpts(title="盒须图"))
     )
 
     boxplot8 = (
         Boxplot(init_opts=opts.InitOpts(theme=ThemeType.DARK))
         .add_xaxis(["ROUND(A.POWER,0)"])
         .add_yaxis("", Boxplot().prepare_data([data8]), box_width="40%")
-        .set_global_opts(title_opts=opts.TitleOpts(title="盒须图"))
+        # .set_global_opts(title_opts=opts.TitleOpts(title="盒须图"))
     )
 
     boxplot9 = (
         Boxplot(init_opts=opts.InitOpts(theme=ThemeType.DARK))
         .add_xaxis(["YD15"])
         .add_yaxis("", Boxplot().prepare_data([data9]), box_width="40%")
-        .set_global_opts(title_opts=opts.TitleOpts(title="盒须图"))
+        # .set_global_opts(title_opts=opts.TitleOpts(title="盒须图"))
     )
 
     # 创建网格对象
@@ -556,7 +555,6 @@ def EllipticEnvelope_Detection(df):
 def OneClassSVM_Detection(df):
     # One-Class SVM检测（基于支持向量机的异常值检测）
     from sklearn.svm import OneClassSVM
-
     numeric_columns = [
         "WINDSPEED",
         "PREPOWER",
@@ -647,9 +645,9 @@ def data_preprocess(
     border_color="white",
     title_top=50,
     theme='dark',#主题
-    normal_color='66ccff',#正常点的颜色
-    outliers_color='fd1105',#异常点的颜色
-    impute_color='ffff00',#填充点的颜色
+    normal_color='#66ccff',#正常点的颜色
+    outliers_color='#fd1105',#异常点的颜色
+    impute_color='#ffff00',#填充点的颜色
     is_rotate=False#是否自动旋转
 ):
     """数据预处理
@@ -733,6 +731,9 @@ def data_preprocess(
     elif before_impute_method == "KNN_RF":
         df = KNN_RF_Impute(df)
 
+    # 备份df
+    df_copy = df
+
     # 检测异常值
     if detection == "IF":
         df = IF_Detection(df)
@@ -742,6 +743,9 @@ def data_preprocess(
         df = EllipticEnvelope_Detection(df)
     elif detection == "SVM":
         df = OneClassSVM_Detection(df)
+
+    df = df.reset_index()
+
     col1, col2, col3 = "ROUND(A.WS,1)", "ROUND(A.POWER,0)", "YD15"
     nan_index = [
         i
@@ -752,6 +756,7 @@ def data_preprocess(
             "YD15",
         ].index
     ]
+    # print(nan_index)
     data_normal = []
     for i in range(len(df)):
         if i not in nan_index:
@@ -789,7 +794,7 @@ def data_preprocess(
         .add(
             "异常值",
             data=[
-                [float(df[col1][i]), float(df[col2][i]), float(df[col3][i])]
+                [float(df_copy[col1][i]), float(df_copy[col2][i]), float(df_copy[col3][i])]
                 for i in nan_index
             ],
             xaxis3d_opts=opts.Axis3DOpts(

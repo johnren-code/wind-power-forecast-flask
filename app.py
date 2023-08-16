@@ -14,10 +14,10 @@ import warning
 
 app = Flask(__name__)
 
-HOSTNAME = "sh-cynosdbmysql-grp-d2nmcw3c.sql.tencentcdb.com"
-PORT = 27710
+HOSTNAME = "127.0.0.1"
+PORT = 3306
 USERNAME = "root"
-PASSWORD = "rbl123.+"
+PASSWORD = "root"
 DATABASE = "windpowerforecast"
 
 app.config[
